@@ -1,2 +1,11 @@
 output*/
 *ipynb
+
+/data
+./data
+/finetune
+./finetune
+
+.venv
+/venv
+./venvs
