@@ -6,7 +6,7 @@ import pprint # For pretty printing complex data structures
 
 # --- Configuration ---
 DEFAULT_OUTPUT_DIR = "downloaded_valid_pdfs"
-DEFAULT_JSON_FILENAME = "collected_pdf_texts.json"
+DEFAULT_JSON_FILENAME = "/mnt/data_volume/dataset/downloaded_valid_pdfs/collected_pdf_texts.json"
 
 def get_human_readable_size(size_bytes):
     """Converts a size in bytes to a human-readable format (KB, MB, GB)."""
