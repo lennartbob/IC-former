@@ -5,221 +5,205 @@ import io
 import fitz  # PyMuPDF
 import tiktoken
 from tqdm import tqdm
-import random
+import random # For shuffling ZIP order if desired
 import time
-import shutil # For moving files
+import shutil # For directory cleanup
+import json # For JSON output
 
 # --- Configuration ---
 BASE_URL = "https://digitalcorpora.s3.amazonaws.com/corpora/files/CC-MAIN-2021-31-PDF-UNTRUNCATED/"
-TARGET_PDF_COUNT = 2000 # How many valid PDFs to collect
+TARGET_PDF_COUNT = 2000  # How many valid PDFs to collect
 MIN_TOKENS = 1500
 OUTPUT_DIR = "downloaded_valid_pdfs"
-TEMP_DIR = "temp_pdf_processing" # For temporary extraction
+# Temporary directory for storing the currently downloaded ZIP file
+TEMP_ZIP_DOWNLOAD_DIR = "temp_zip_processing"
+JSON_OUTPUT_FILENAME = "collected_pdf_texts.json"
 
-# Total number of unique PDFs in the corpus (0000000.pdf to 7932877.pdf)
-# From README: "All PDF files are named using a sequential 7-digit number ... through 7932877.pdf"
-TOTAL_UNIQUE_PDFS = 7932878 # (0 to 7932877 inclusive)
-MAX_PDF_NUM = TOTAL_UNIQUE_PDFS - 1
+# Corpus details (from README)
+# PDFs: 0000000.pdf to 7932877.pdf
+# ZIPs: 0000.zip to 7932.zip (7,933 ZIP files)
+TOTAL_ZIP_FILES = 7933
 
 # --- Setup ---
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(TEMP_DIR, exist_ok=True)
+os.makedirs(TEMP_ZIP_DOWNLOAD_DIR, exist_ok=True)
 
-# Initialize tiktoken tokenizer (GPT-2 is common, or choose another)
-# Using cl100k_base as it's common for newer models like GPT-3.5/4
+# Initialize tiktoken tokenizer
 try:
     tokenizer = tiktoken.get_encoding("cl100k_base")
-except:
-    print("Falling back to p50k_base tokenizer")
+except Exception:
+    print("Falling back to p50k_base tokenizer for tiktoken.")
     tokenizer = tiktoken.get_encoding("p50k_base")
 
-
-def count_tokens_from_pdf_data(pdf_data):
-    """Extracts text from PDF data and counts tokens."""
-    text = ""
-    try:
-        doc = fitz.open(stream=pdf_data, filetype="pdf")
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            text += page.get_text()
-        doc.close()
-    except Exception as e:
-        # print(f"Fitz error processing PDF: {e}") # Comment out for less verbose output
-        return 0 # Can't process, so 0 tokens
-
-    if not text.strip():
-        return 0
-
-    tokens = tokenizer.encode(text)
-    return len(tokens)
-
-def get_pdf_details(pdf_sequential_number):
+def get_zip_url_and_local_path(zip_num_int):
     """
-    Generates the ZIP filename, subdirectory, and PDF filename within the ZIP
-    based on the global sequential PDF number.
+    Generates the URL for a given ZIP number and its intended local download path.
     """
-    pdf_filename_in_zip = f"{pdf_sequential_number:07d}.pdf"
-
-    # Each ZIP contains up to 1,000 PDF files
-    zip_num_int = pdf_sequential_number // 1000
-    zip_filename = f"{zip_num_int:04d}.zip"
-
-    # ZIP files are clustered into groups of 1,000
+    zip_filename_short = f"{zip_num_int:04d}.zip"
+    # Determine subdirectory for the ZIP file
     # e.g., 0000.zip to 0999.zip are in zipfiles/0000-0999/
     # 1000.zip to 1999.zip are in zipfiles/1000-1999/
     zip_group_start = (zip_num_int // 1000) * 1000
     zip_group_end = zip_group_start + 999
-    zip_subdir = f"zipfiles/{zip_group_start:04d}-{zip_group_end:04d}/"
+    zip_subdir_path = f"zipfiles/{zip_group_start:04d}-{zip_group_end:04d}/"
 
-    zip_url = f"{BASE_URL}{zip_subdir}{zip_filename}"
-    return zip_url, pdf_filename_in_zip, zip_filename
+    full_zip_url = f"{BASE_URL}{zip_subdir_path}{zip_filename_short}"
+    local_download_path = os.path.join(TEMP_ZIP_DOWNLOAD_DIR, zip_filename_short)
+    return full_zip_url, local_download_path
 
+def extract_text_and_count_tokens_from_pdf_data(pdf_data):
+    """
+    Extracts text from PDF byte data, counts tokens, and returns text and count.
+    Returns (None, 0) on error during PDF processing.
+    """
+    full_text = ""
+    try:
+        # Open PDF from bytes
+        doc = fitz.open(stream=pdf_data, filetype="pdf")
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            full_text += page.get_text()
+        doc.close()
+    except Exception as e:
+        # print(f"Fitz error processing a PDF: {e}") # Optional: for debugging
+        return None, 0  # Indicate error
+
+    if not full_text.strip():
+        return "", 0  # No text extracted
+
+    tokens = tokenizer.encode(full_text)
+    return full_text, len(tokens)
 
 # --- Main Download and Processing Logic ---
-collected_pdfs_info = []
-processed_pdf_numbers = set() # To avoid reprocessing the same random PDF number if selected again
+collected_data_for_json = []
+valid_pdfs_found_count = 0
 
-# We will iterate more than TARGET_PDF_COUNT times because many PDFs won't meet the criteria
-# The tqdm total can be an estimate or updated dynamically if we knew the acceptance rate.
-# For simplicity, let's set a large number for attempts or just let it run.
-# The progress bar will show how many valid PDFs we *found*.
-pbar = tqdm(total=TARGET_PDF_COUNT, desc="Finding valid PDFs")
+# Create a list of ZIP file numbers (0 to 7932)
+# You can shuffle this list if you want to process ZIPs in a random order
+# to get a more diverse sample early on if you don't intend to run through all.
+zip_file_indices = list(range(TOTAL_ZIP_FILES))
+# random.shuffle(zip_file_indices) # Uncomment to process ZIPs in random order
 
-# Keep track of currently downloaded ZIP to avoid re-downloading if multiple
-# PDFs are selected from the same ZIP in close succession (less likely with pure random)
-# A more advanced cache could store multiple ZIPs or their contents.
-current_zip_path = None
-current_zip_url_loaded = None
+# Progress bar for overall valid PDFs found
+pbar_valid_pdfs = tqdm(total=TARGET_PDF_COUNT, desc="Valid PDFs Found", unit="PDF")
+# Progress bar for ZIPs processed
+pbar_zips = tqdm(total=len(zip_file_indices), desc="Processing ZIPs", unit="ZIP")
 
-attempts = 0
-max_attempts = TOTAL_UNIQUE_PDFS * 2 # Heuristic limit to prevent infinite loops if criteria are too strict
+stop_all_processing = False
 
-while len(collected_pdfs_info) < TARGET_PDF_COUNT and attempts < max_attempts:
-    attempts += 1
-    
-    # 1. Randomly select a PDF number
-    pdf_sequential_number = random.randint(0, MAX_PDF_NUM)
+for zip_idx in zip_file_indices:
+    if stop_all_processing:
+        break
 
-    if pdf_sequential_number in processed_pdf_numbers:
-        continue # Skip if we already tried this number
-    processed_pdf_numbers.add(pdf_sequential_number)
-
-    # 2. Get URL details for this PDF
-    zip_url, pdf_filename_in_zip, zip_filename_short = get_pdf_details(pdf_sequential_number)
-    
-    temp_zip_path = os.path.join(TEMP_DIR, zip_filename_short)
-    extracted_pdf_path = os.path.join(TEMP_DIR, pdf_filename_in_zip)
+    pbar_zips.set_postfix_str(f"Current ZIP: {zip_idx:04d}.zip")
+    zip_url, local_zip_filepath = get_zip_url_and_local_path(zip_idx)
 
     try:
-        # 3. Download the ZIP file (if not already the current one)
-        # This is a simple cache for only the very last ZIP.
-        # A more robust solution would be to download a ZIP, extract all PDFs, process them,
-        # then move to the next ZIP. Current approach is truly random PDF selection.
-        if current_zip_url_loaded != zip_url:
-            print(f"\nDownloading {zip_url}...") # Verbose
-            response = requests.get(zip_url, stream=True)
-            response.raise_for_status() # Check for HTTP errors
-            
-            with open(temp_zip_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            current_zip_path = temp_zip_path
-            current_zip_url_loaded = zip_url
-        else:
-            # print(f"\nUsing cached {zip_filename_short} for {pdf_filename_in_zip}") # Verbose
-            pass
+        # 1. Download the current ZIP file
+        # print(f"\nDownloading {zip_url}...")
+        response = requests.get(zip_url, stream=True)
+        response.raise_for_status()  # Raise an exception for HTTP errors
 
+        with open(local_zip_filepath, 'wb') as f_zip:
+            for chunk in response.iter_content(chunk_size=8192*2): # Increased chunk size
+                f_zip.write(chunk)
 
-        # 4. Extract the specific PDF from the ZIP
-        print(f"Extracting {pdf_filename_in_zip} from {current_zip_path}...") # Verbose
-        with zipfile.ZipFile(current_zip_path, 'r') as zf:
-            # Check if the specific PDF is in this ZIP (it should be by naming convention)
-            if pdf_filename_in_zip not in zf.namelist():
-                # This might happen if the last ZIP in a group doesn't have 1000 files
-                # or due to the Errata (missing files).
-                # print(f"Warning: {pdf_filename_in_zip} not found in {zip_filename_short}. Skipping.")
-                continue
-            
-            pdf_data = zf.read(pdf_filename_in_zip)
+        # 2. Process PDFs within the downloaded ZIP
+        # print(f"Processing PDFs in {local_zip_filepath}...")
+        with zipfile.ZipFile(local_zip_filepath, 'r') as zf:
+            # Get list of all PDF files in the ZIP
+            pdf_filenames_in_zip = [
+                member.filename for member in zf.infolist()
+                if not member.is_dir() and member.filename.lower().endswith('.pdf')
+            ]
+            # pdf_filenames_in_zip.sort() # Optional: process in order
 
-        # 5. Count tokens
-        # print(f"Processing {pdf_filename_in_zip} for token count...") # Verbose
-        num_tokens = count_tokens_from_pdf_data(pdf_data)
+            for pdf_name_in_zip in pdf_filenames_in_zip:
+                if valid_pdfs_found_count >= TARGET_PDF_COUNT:
+                    stop_all_processing = True
+                    break # Stop processing PDFs in this ZIP
 
-        # 6. If token count > MIN_TOKENS:
-        if num_tokens > MIN_TOKENS:
-            final_pdf_path = os.path.join(OUTPUT_DIR, pdf_filename_in_zip)
-            with open(final_pdf_path, 'wb') as f_out:
-                f_out.write(pdf_data)
-            
-            collected_pdfs_info.append({
-                "filename": pdf_filename_in_zip,
-                "zip_url": zip_url,
-                "tokens": num_tokens
-            })
-            pbar.update(1)
-            print(f"VALID: {pdf_filename_in_zip}, Tokens: {num_tokens}. Saved.")
+                try:
+                    pdf_bytes = zf.read(pdf_name_in_zip)
+                except Exception as e_read:
+                    # print(f"Error reading {pdf_name_in_zip} from ZIP: {e_read}")
+                    continue # Skip this PDF
 
-            # If the current_zip_path (temp_zip_path) still exists and we are done with this ZIP
-            # (or to save space), we could delete it here.
-            # However, if the next random PDF is from the same ZIP, we'd redownload.
-            # For this truly random strategy, we keep the last ZIP.
+                # 3. Extract text and count tokens
+                extracted_text, token_count = extract_text_and_count_tokens_from_pdf_data(pdf_bytes)
 
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
-            # print(f"ZIP file not found: {zip_url}. This might be expected for last few ZIPs or errata. Skipping.")
-            pass # Common if a zip doesn't exist (e.g. if MAX_PDF_NUM isn't perfectly divisible)
-        else:
-            # print(f"HTTP error downloading {zip_url}: {e}")
-            pass
-        time.sleep(1) # Wait a bit after an error
-    except zipfile.BadZipFile:
-        # print(f"Error: Bad ZIP file {current_zip_path}. Skipping.")
-        if os.path.exists(current_zip_path): os.remove(current_zip_path) # Remove corrupted download
-        current_zip_path = None # Force re-download if tried again
-        current_zip_url_loaded = None
-        time.sleep(1)
-    except Exception as e:
-        # print(f"An unexpected error occurred for {pdf_filename_in_zip} from {zip_url}: {e}")
-        time.sleep(1)
+                if extracted_text is None: # fitz processing error
+                    continue # Skip this PDF
+
+                # 4. If token count meets criteria
+                if token_count > MIN_TOKENS:
+                    # Save the PDF file itself
+                    output_pdf_path = os.path.join(OUTPUT_DIR, pdf_name_in_zip)
+                    with open(output_pdf_path, 'wb') as f_out_pdf:
+                        f_out_pdf.write(pdf_bytes)
+
+                    # Store data for JSON
+                    collected_data_for_json.append({
+                        "filename": pdf_name_in_zip,
+                        "text": extracted_text,
+                        "token_count": token_count
+                    })
+
+                    valid_pdfs_found_count += 1
+                    pbar_valid_pdfs.update(1)
+                    # print(f"VALID: {pdf_name_in_zip}, Tokens: {token_count}. ({valid_pdfs_found_count}/{TARGET_PDF_COUNT})")
+
+        if stop_all_processing: # Check again if target reached within inner loop
+            break
+
+    except requests.exceptions.RequestException as e_req:
+        # print(f"Network error downloading {zip_url}: {e_req}. Skipping this ZIP.")
+        time.sleep(2) # Wait a bit before trying next ZIP
     finally:
-        # Clean up extracted individual PDF if it exists (not strictly necessary with in-memory)
-        if os.path.exists(extracted_pdf_path):
+        # 5. Delete the downloaded ZIP file to save space
+        if os.path.exists(local_zip_filepath):
             try:
-                os.remove(extracted_pdf_path)
-            except OSError:
-                pass # file might be locked briefly on Windows
+                os.remove(local_zip_filepath)
+                # print(f"Deleted temporary ZIP: {local_zip_filepath}")
+            except OSError as e_del:
+                print(f"Error deleting temporary ZIP {local_zip_filepath}: {e_del}")
+        pbar_zips.update(1)
 
-pbar.close()
 
-print(f"\n--- Download and Processing Complete ---")
-print(f"Collected {len(collected_pdfs_info)} PDFs meeting the criteria (>{MIN_TOKENS} tokens).")
-print(f"Saved to: {os.path.abspath(OUTPUT_DIR)}")
-# print(f"Total attempts to find PDFs: {attempts}")
+pbar_valid_pdfs.close()
+pbar_zips.close()
 
-# --- Cleanup temporary ZIP files ---
-print("Cleaning up temporary files...")
+# --- Save the collected data to JSON ---
+if collected_data_for_json:
+    json_output_path = os.path.join(OUTPUT_DIR, JSON_OUTPUT_FILENAME)
+    print(f"\nSaving collected text data for {len(collected_data_for_json)} PDFs to {json_output_path}...")
+    try:
+        with open(json_output_path, 'w', encoding='utf-8') as f_json:
+            json.dump(collected_data_for_json, f_json, ensure_ascii=False, indent=2)
+        print("JSON data saved successfully.")
+    except IOError as e_json_io:
+        print(f"Error saving JSON data: {e_json_io}")
+else:
+    print("\nNo valid PDFs were collected to save to JSON.")
+
+
+print(f"\n--- Processing Complete ---")
+print(f"Collected {valid_pdfs_found_count} PDFs meeting the criteria (>{MIN_TOKENS} tokens).")
+print(f"PDFs and JSON data saved in: {os.path.abspath(OUTPUT_DIR)}")
+
+if valid_pdfs_found_count < TARGET_PDF_COUNT and not stop_all_processing:
+    print(f"Warning: Only found {valid_pdfs_found_count} PDFs after checking all available ZIPs, but targeted {TARGET_PDF_COUNT}.")
+elif valid_pdfs_found_count < TARGET_PDF_COUNT and stop_all_processing:
+     print(f"Processing stopped after finding {valid_pdfs_found_count} PDFs (target was {TARGET_PDF_COUNT}).")
+
+
+# --- Cleanup temporary ZIP download directory ---
+# It should be empty if all ZIPs were deleted, but we can try to remove it.
 try:
-    shutil.rmtree(TEMP_DIR)
-    print(f"Removed temporary directory: {TEMP_DIR}")
-except Exception as e:
-    print(f"Error removing temporary directory {TEMP_DIR}: {e}")
-
-
-# --- Optional: Report on Country Distribution of the Source Corpus ---
-# This part is for context, as the script doesn't actively match this distribution.
-# You would need to download and parse 'cc-hosts-20230303.csv.gz'
-print("\n--- Source Corpus Country Distribution (Top 10 from README) ---")
-print("Note: The downloaded sample is random and may not perfectly mirror this.")
-print("Country Code | Count")
-print("US           | 3,259,209")
-print("DE           | 896,990")
-print("FR           | 462,215")
-print("JP           | 364,303")
-print("GB           | 268,950")
-print("IT           | 228,065")
-print("NL           | 206,389")
-print("RU           | 176,947")
-print("CA           | 175,853")
-print("ES           | 173,619")
-print("-----------------------------------------------------------------")
+    if os.path.exists(TEMP_ZIP_DOWNLOAD_DIR) and not os.listdir(TEMP_ZIP_DOWNLOAD_DIR):
+        shutil.rmtree(TEMP_ZIP_DOWNLOAD_DIR)
+        print(f"Removed empty temporary ZIP directory: {TEMP_ZIP_DOWNLOAD_DIR}")
+    elif os.path.exists(TEMP_ZIP_DOWNLOAD_DIR):
+         print(f"Temporary ZIP directory {TEMP_ZIP_DOWNLOAD_DIR} is not empty. Manual check may be needed.")
+except Exception as e_cleanup:
+    print(f"Error during final cleanup of {TEMP_ZIP_DOWNLOAD_DIR}: {e_cleanup}")
