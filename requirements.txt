@@ -1,3 +1,4 @@
 torch==2.3.1
 transformers==4.44.2
 matplotlib
+sentencepiece
