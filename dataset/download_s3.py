@@ -14,7 +14,7 @@ import json # For JSON output
 BASE_URL = "https://digitalcorpora.s3.amazonaws.com/corpora/files/CC-MAIN-2021-31-PDF-UNTRUNCATED/"
 TARGET_PDF_COUNT = 2000  # How many valid PDFs to collect
 MIN_TOKENS = 1500
-OUTPUT_DIR = "downloaded_valid_pdfs"
+OUTPUT_DIR = "dataset/downloaded_valid_pdfs"
 # Temporary directory for storing the currently downloaded ZIP file
 TEMP_ZIP_DOWNLOAD_DIR = "temp_zip_processing"
 JSON_OUTPUT_FILENAME = "collected_pdf_texts.json"
