@@ -33,10 +33,11 @@ def init(lm_path:str, base_lm_path:str, icformer_path:str|None, max_new_tokens:i
 
     model = ICFormerQA(icformer, language_model, tokenizer)
 
-    ckpt = torch.load(os.path.join(icformer_path, 'param.pt'))
-    with torch.no_grad():
-        model.digest_embeddings.copy_(ckpt['digest_embeddings'])
-        model.FT.copy_(ckpt['FT'])
+    if icformer_path:
+        ckpt = torch.load(os.path.join(icformer_path, 'param.pt'))
+        with torch.no_grad():
+            model.digest_embeddings.copy_(ckpt['digest_embeddings'])
+            model.FT.copy_(ckpt['FT'])
 
     return model
 
