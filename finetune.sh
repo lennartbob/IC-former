@@ -7,7 +7,7 @@ CUDA_VISIBLE_DEVICES=0 python finetune.py \
 --max_seq_len 768  \
 --max_chunk_len 512 \
 --save_interval 5000 \
---gradient_accumulation 96 \
+--gradient_accumulation 10 \
 --avg_level sentence \
 --clip_grad \
 --max_norm 1 \

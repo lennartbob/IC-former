@@ -7,6 +7,7 @@ import time # Import the time module for timing
 import matplotlib.pyplot as plt # Import matplotlib for plotting
 
 from transformers import AutoModelForCausalLM, LlamaTokenizer
+from core.jinja_helper import process_template
 from data_utils import PwCForTest
 from icformer import ICFormerModel
 from modules import ICFormerQA
@@ -33,21 +34,19 @@ def init(lm_path:str, base_lm_path:str, icformer_path:str, max_new_tokens:int =3
 
     return model
 
-lm_path = "princeton-nlp/Llama-3-8B-ProLong-512k-Base"
-base_lm_path = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-icformer_path = ""
 
-ic_model:ICFormerQA = init(lm_path, base_lm_path, icformer_path)
-
-
-async def generate(ic_former:ICFormerQA, query:str, context:str):
-    
-    context_ids = ic_former.tokenizer(context)['input_ids']
-    prompt_ids = ic_former.tokenizer(prompt)['input_ids']
+async def generate(model:ICFormerQA, query:str, context:str, max_new_tokens:int = 3000):
+    prompt = process_template(
+        "contextual_summ_3.jinja",
+        {"queries": query}
+    )
+    context_ids = model.tokenizer(context)['input_ids']
+    prompt_ids = model.tokenizer(prompt)['input_ids']
 
     context_embeds = model.convert_ids_to_embeds(context_ids)
     prompt_embeds = model.convert_ids_to_embeds(prompt_ids)
     soft_prompt = model.get_soft_prompt(inputs_embeds=context_embeds, use_chunk=model.use_chunk)
     inputs_embeds = torch.cat([model.pre_embeds, soft_prompt, model.FT, prompt_embeds, model.post_embeds], dim=1)
 
-    outputs = model.generate(inputs_embeds=inputs_embeds, max_new_tokens=args.max_new_tokens, streaming=False)[0]
+    outputs = model.generate(inputs_embeds=inputs_embeds, max_new_tokens=max_new_tokens, streaming=False)[0]
+    return outputs
