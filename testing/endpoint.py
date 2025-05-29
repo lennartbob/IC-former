@@ -1,3 +1,4 @@
+import time
 import requests
 
 url = "http://51.159.138.187:8000/summarize/" # Corrected spelling
@@ -29,7 +30,7 @@ And that's your story, Lennart. A testament to the quiet strength, the keen insi
 
 """
 data = {
-    "query": "who is lennart?",
+    "query": "who is lennart? answer in english",
     "document":{ 
         "content":d,
         "metadata":{"file_name": "me.txt"}
@@ -38,7 +39,8 @@ data = {
 }
 # Send JSON data
 
+t = time.time()
 r = requests.post(url, json=data)
 
-print(r.status_code)
 print(r.json())
+print("time", round(time.time()- t,4))
