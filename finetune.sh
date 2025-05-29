@@ -1,6 +1,6 @@
 CUDA_VISIBLE_DEVICES=0 python finetune.py \
 --data_path ./data/SFT_con_sum.jsonl \
---lm_path princeton-nlp/Llama-3-8B-ProLong-512k-Base \
+--lm_path meta-llama/Meta-Llama-3.1-8B-Instruct \
 --base_lm_path meta-llama/Meta-Llama-3.1-8B-Instruct \
 --save_path ./output \
 --max_epoch 3 \
