@@ -30,9 +30,9 @@ And that's your story, Lennart. A testament to the quiet strength, the keen insi
 
 """
 data = {
-    "query": "who is lennart? answer in english",
+    "query": "who is strong?",
     "document":{ 
-        "content":", ".join([d*10]),
+        "content":d,
         "metadata":{"file_name": "me.txt"}
     },
     "expaned_queries":None

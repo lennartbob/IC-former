@@ -10,14 +10,23 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from core.jinja_helper import process_template
 from data_utils import PwCForTest
 from icformer import ICFormerModel
+from icformer.configuration import ICFormerConfig
 from modules import ICFormerQA
 from utils import parse_args
 
-def init(lm_path:str, base_lm_path:str, icformer_path:str, max_new_tokens:int =3000) ->ICFormerQA:
+def init(lm_path:str, base_lm_path:str, icformer_path:str|None, max_new_tokens:int =3000) ->ICFormerQA:
     
     tokenizer = AutoTokenizer.from_pretrained(base_lm_path, use_fast=True)
+    
+    if icformer_path: # Load icformer checkpoint
+        icformer = ICFormerModel.from_pretrained(icformer_path, device_map='cuda', torch_dtype=torch.bfloat16)
+    else:                  # Random initialize icformer
+        icformer_config = ICFormerConfig()
+        icformer_config.num_hidden_layers = 3
+        icformer_config.num_query_tokens = 128
+        icformer = ICFormerModel(icformer_config).to(dtype=torch.bfloat16, device='cuda')
 
-    icformer = ICFormerModel.from_pretrained(icformer_path, device_map="cuda", torch_dtype=torch.bfloat16)
+    
     icformer.requires_grad_(False)
     language_model = AutoModelForCausalLM.from_pretrained(lm_path, device_map="cuda", torch_dtype=torch.bfloat16)
     language_model.requires_grad_(False)
