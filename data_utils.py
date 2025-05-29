@@ -4,6 +4,8 @@ import random
 
 from torch.utils.data import Dataset
 
+from testing.utils import count_tokens
+
 class PileDataset(Dataset):
     def __init__(self, file):
         self.raw_data = self.parse_file(file)
@@ -38,7 +40,10 @@ class PwCDataset(Dataset):
         with open(file, 'r') as f:
             for line in f:
                 data = json.loads(line)
-                if self.not_english(data['input']): continue
+                
+                if count_tokens(data[input] > 80_000):
+                    continue
+                # if self.not_english(data['input']): continue
                 ret.append(data)
         return ret
     
