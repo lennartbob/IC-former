@@ -1,6 +1,6 @@
 CUDA_VISIBLE_DEVICES=0 python finetune.py \
---data_path ./data/PwC_train.jsonl \
---lm_path meta-llama/Llama-2-7b-hf \
+--data_path ./data/SFT_con_sum.jsonl \
+--lm_path princeton-nlp/Llama-3-8B-ProLong-512k-Base \
 --save_path ./output \
 --max_epoch 3 \
 --max_seq_len 1024 \
