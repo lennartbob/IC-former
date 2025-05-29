@@ -2,5 +2,5 @@
 from data_utils import PwCForTest, PwCDataset
 
 
-path = "data/collected_pdf_texts_with_q_and_answer_id_updated.json"
+path = "data/SFT_con_sum.jsonl"
 data = PwCDataset(path)

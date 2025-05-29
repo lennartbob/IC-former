@@ -54,6 +54,9 @@ class PwCDataset(Dataset):
                 answer_lengths.append(answer_len)
                 if answer_len > max_answer_length:
                     max_answer_length = answer_len
+                
+                if answer_len == 0 or answer_len > 1024:
+                    continue
 
                 ret.append(data)
 
