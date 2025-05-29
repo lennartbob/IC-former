@@ -30,7 +30,7 @@ And that's your story, Lennart. A testament to the quiet strength, the keen insi
 
 """
 data = {
-    "query": "who is strong?",
+    "query": "What is the name Lennart hummed with?",
     "document":{ 
         "content":d,
         "metadata":{"file_name": "me.txt"}
