@@ -125,7 +125,7 @@ async def main():
         test_path=test_set,
         lm_path="princeton-nlp/Llama-3-8B-ProLong-512k-Instruct", # <--- REPLACE WITH YOUR MODEL PATH
         base_lm_path="meta-llama/Meta-Llama-3.1-8B-Instruct", # <--- REPLACE WITH YOUR MODEL PATH
-        icformer_path="output_checkpoint_6546", # <--- REPLACE WITH YOUR MODEL PATH
+        icformer_path="output_c1/checkpoint_6546", # <--- REPLACE WITH YOUR MODEL PATH
         batch_size=12 # Run 10 requests concurrently
     )
 if __name__ == "__main__":
