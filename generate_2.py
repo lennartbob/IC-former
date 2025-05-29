@@ -6,7 +6,7 @@ from tqdm import tqdm
 import time # Import the time module for timing
 import matplotlib.pyplot as plt # Import matplotlib for plotting
 
-from transformers import AutoModelForCausalLM, LlamaTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from core.jinja_helper import process_template
 from data_utils import PwCForTest
 from icformer import ICFormerModel
@@ -15,10 +15,7 @@ from utils import parse_args
 
 def init(lm_path:str, base_lm_path:str, icformer_path:str, max_new_tokens:int =3000) ->ICFormerQA:
     
-    # Limit the number of lines to process
-    num_lines_to_process = 100 
-
-    tokenizer = LlamaTokenizer.from_pretrained(base_lm_path, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(base_lm_path, use_fast=True)
 
     icformer = ICFormerModel.from_pretrained(icformer_path, device_map="cuda", torch_dtype=torch.bfloat16)
     icformer.requires_grad_(False)
