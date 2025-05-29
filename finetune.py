@@ -15,7 +15,7 @@ if __name__ == '__main__':
     args = parse_args()
     seed_everything(args.seed)
     data = PwCWithTemplate(args.data_path)
-    tokenizer = LlamaTokenizer.from_pretrained(args.lm_path, use_fast=True)
+    tokenizer = LlamaTokenizer.from_pretrained(args.base_lm_path, use_fast=True)
 
     if args.icformer_path: # Load icformer checkpoint
         icformer = ICFormerModel.from_pretrained(args.icformer_path, device_map='cuda', torch_dtype=torch.bfloat16)
