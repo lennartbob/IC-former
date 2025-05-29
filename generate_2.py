@@ -41,7 +41,6 @@ def init(lm_path:str, base_lm_path:str, icformer_path:str|None, max_new_tokens:i
 
     return model
 
-
 async def generate(model:ICFormerQA, query:str, context:str, max_new_tokens:int = 500):
     prompt = process_template(
         "contextual_summ_3.jinja",

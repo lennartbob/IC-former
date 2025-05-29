@@ -39,7 +39,10 @@ async def get_ROUGE_EVAL(test_path: str, lm_path: str, base_lm_path: str, icform
     results = [] # To store individual results for saving
 
     # Process dataset in batches
-    for i in tqdm(range(0, len(dataset), batch_size), desc="Processing batches"):
+
+    #batches_to_run = len(dataset)
+    batches_to_run = 6
+    for i in tqdm(range(0, batches_to_run, batch_size), desc="Processing batches"):
         batch = dataset[i:i + batch_size]
         
         # Create a list of coroutines for the current batch
@@ -125,8 +128,8 @@ async def main():
         test_path=test_set,
         lm_path="princeton-nlp/Llama-3-8B-ProLong-512k-Instruct", # <--- REPLACE WITH YOUR MODEL PATH
         base_lm_path="meta-llama/Meta-Llama-3.1-8B-Instruct", # <--- REPLACE WITH YOUR MODEL PATH
-        icformer_path="output_c1/checkpoint-6546", # <--- REPLACE WITH YOUR MODEL PATH
-        batch_size=12 # Run 10 requests concurrently
+        icformer_path="output_c1/checkpoint-13092", # <--- REPLACE WITH YOUR MODEL PATH
+        batch_size=10 # Run 10 requests concurrently
     )
 if __name__ == "__main__":
     asyncio.run(main())
