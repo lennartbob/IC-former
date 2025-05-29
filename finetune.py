@@ -33,6 +33,8 @@ if __name__ == '__main__':
 
     model.max_seq_len = args.max_seq_len
     model.max_chunk_len = args.max_chunk_len
+    model.max_label_len = args.max_label_len
+
     # model.alpha = 1
     model.use_chunk = args.use_chunk
     # model.max_label_len = 1024
