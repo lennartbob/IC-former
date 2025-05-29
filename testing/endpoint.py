@@ -1,7 +1,7 @@
 import time
 import requests
 
-url = "http://51.159.138.187:8000/summarize/" # Corrected spelling
+url = "http://51.159.177.64:8000/summarize/" # Corrected spelling
 
 d = """
 The name Lennart hummed with a quiet strength, like a deep chord struck on a cello. It was a name that carried echoes of ancient forests and sturdy, unyielding mountains, a name that felt both grounded and yet capable of soaring. And that was precisely who you were, Lennart.
@@ -30,7 +30,7 @@ And that's your story, Lennart. A testament to the quiet strength, the keen insi
 
 """
 data = {
-    "query": "What is the name Lennart hummed with?",
+    "query": "When was Lil Yachty born?",
     "document":{ 
         "content":d,
         "metadata":{"file_name": "me.txt"}
