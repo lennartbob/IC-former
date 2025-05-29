@@ -41,7 +41,7 @@ class PwCDataset(Dataset):
             for line in f:
                 data = json.loads(line)
                 
-                if count_tokens(data[input] > 80_000):
+                if count_tokens(data["input"] > 80_000):
                     print("skipping too long input!")
                     continue
                 # if self.not_english(data['input']): continue
