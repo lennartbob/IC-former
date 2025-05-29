@@ -28,7 +28,7 @@ def parse_args():
     # path args
     parser.add_argument('--data_path', type=str, default='./data/pile_small.jsonl')
     parser.add_argument('--lm_path', type=str, default='meta-llama/Llama-2-7b-hf')
-    parser.add_argument('--base-lm-path', type=str, default='meta-llama/Llama-2-7b-hf')
+    parser.add_argument('--base_lm_path', type=str, default='meta-llama/Llama-2-7b-hf')
     parser.add_argument('--icformer_path', type=str, default='')
     parser.add_argument('--save_path', type=str, default='./output')
     # model args
