@@ -4,7 +4,7 @@ from botocore.exceptions import ClientError
 
 # --- Configuration ---
 AWS_BUCKET_NAME = "digitizepid"
-S3_OBJECT_KEY = "STF_con_sum.jsonl" # The name it will have in the S3 bucket
+S3_OBJECT_KEY = "SFT_con_sum.jsonl" # The name it will have in the S3 bucket
 DEFAULT_JSON_FILENAME = "STF_con_sum.jsonl" # Local filename for upload and download
 
 def download_json_from_s3(bucket_name, object_key, local_file_path):
