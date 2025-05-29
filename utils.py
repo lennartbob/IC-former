@@ -53,6 +53,7 @@ def parse_args():
     # generation args
     parser.add_argument('--max_new_tokens', type=int, default=256)
     parser.add_argument('--output_file', type=str, default="output.jsonl")
+    parser.add_argument('--max_label_len', type=int, default=512)
 
     args = parser.parse_args()
     return args
