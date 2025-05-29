@@ -15,7 +15,7 @@ router = APIRouter(
     prefix="/summarize",
 )
 
-lm_path = "princeton-nlp/Llama-3-8B-ProLong-512k-instruct"
+lm_path = "princeton-nlp/Llama-3-8B-ProLong-512k-Instruct"
 base_lm_path = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 # icformer_path = "output_3/checkpoint-12674"
 icformer_path = None
