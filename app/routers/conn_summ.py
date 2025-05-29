@@ -15,10 +15,10 @@ router = APIRouter(
     prefix="/summarize",
 )
 
-lm_path = "princeton-nlp/Llama-3-8B-ProLong-512k-Base"
+lm_path = "princeton-nlp/Llama-3-8B-ProLong-512k-instruct"
 base_lm_path = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-icformer_path = "output_3/checkpoint-12674"
-
+# icformer_path = "output_3/checkpoint-12674"
+icformer_path = None
 model:ICFormerQA = init(lm_path, base_lm_path, icformer_path)
 
 @router.post(
