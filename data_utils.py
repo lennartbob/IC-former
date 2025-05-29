@@ -39,22 +39,35 @@ class PwCDataset(Dataset):
         ret = []
         answer_lengths = [] # To store lengths of 'answer'
         max_answer_length = 0 # To store the maximum 'answer' length
+        nothing_relevant_found_count = 0
 
         with open(file, 'r', encoding="utf-8") as f:
-            for line in f:
+            lines = f.readlines()
+            total_lines = len(lines)
+            max_nothing_relevant_found = int(total_lines * 0.10) # 10% of the total lines
+
+            for line in lines:
                 data = json.loads(line)
 
                 if count_tokens(data["input"]) > 80_000:
                     print("skipping too long input!")
                     continue
                 # if self.not_english(data['input']): continue
-                
+
+                # Check for "[nothing relevant found]" in answer
+                if data["answer"].strip().lower() == "[nothing relevant found]":
+                    if nothing_relevant_found_count < max_nothing_relevant_found:
+                        nothing_relevant_found_count += 1
+                    else:
+                        print(f"Skipping line: '{data['answer']}' - Exceeded 10% limit for '[nothing relevant found]' answers.")
+                        continue # Skip this line if the limit is reached
+
                 # Calculate token length of 'answer' and update stats
                 answer_len = count_tokens(data["answer"])
                 answer_lengths.append(answer_len)
                 if answer_len > max_answer_length:
                     max_answer_length = answer_len
-                
+
                 if answer_len == 0 or answer_len > 1024:
                     continue
 
@@ -67,7 +80,7 @@ class PwCDataset(Dataset):
             # For a more detailed distribution, you might consider using collections.Counter
             # or calculating percentiles.
             answer_lengths.sort()
-            
+
             # You can print a few quantiles or a simple list if the number of answers is small.
             if len(answer_lengths) < 20: # Just an arbitrary threshold for printing all
                 print(answer_lengths)
@@ -81,9 +94,11 @@ class PwCDataset(Dataset):
 
         # Print the maximum token length of the longest 'answer'
         print(f"\nMaximum token length of 'answer': {max_answer_length}")
+        print(f"Total entries with '[nothing relevant found]' as answer: {nothing_relevant_found_count}")
+
 
         return ret
-    
+
     def __len__(self):
         return len(self.raw_data)
     
