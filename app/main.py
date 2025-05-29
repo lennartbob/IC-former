@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse
 import app.routers.conn_summ as con_summ
 load_dotenv()
 
-app = FastAPI(redoc_url=None, docs_url=None, openapi_url="")
+app = FastAPI(redoc_url=None, openapi_url="")
 
 logger = logging.getLogger()
 

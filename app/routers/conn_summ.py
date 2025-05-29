@@ -14,7 +14,7 @@ from modules import ICFormerQA
 
 router = APIRouter(
   tags=["Summerize"],
-  prefix="/summarize",
+  prefix="/summarize/",
 )
 
 lm_path = "princeton-nlp/Llama-3-8B-ProLong-512k-Base"
