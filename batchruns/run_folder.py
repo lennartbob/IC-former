@@ -93,6 +93,14 @@ def main():
     # --- Phase 1: Upload files and create all batch jobs ---
     print("\n--- Phase 1: Uploading files and creating batch jobs ---")
     for file_path in BATCH_INPUT_DIR.glob("*.jsonl"):
+        run = True
+        for i in range(5):
+            if f"output_{i}" in file_path.name:
+                run = False
+                break
+        if run is False:
+            print("not running", file_path.name, "it already ran")
+            continue
         print(f"Initiating processing for: {file_path.name}")
         file_id = upload_file(file_path)
         if file_id:
@@ -108,65 +116,3 @@ def main():
     if not active_batches:
         print("No batch jobs were initiated. Exiting.")
         return
-
-    print(f"\nSuccessfully initiated {len(active_batches)} batch jobs.")
-    print("--- Phase 2: Monitoring batch job completion ---")
-
-    # --- Phase 2: Monitor all batch jobs concurrently ---
-    polling_interval_seconds = 30 # How often to poll the API for updates
-    
-    while active_batches:
-        print(f"\nPolling batch statuses. Remaining active jobs: {len(active_batches)}")
-        
-        # Create a list to store jobs that have completed/failed/cancelled in this cycle
-        completed_this_cycle = []
-
-        for batch_info in list(active_batches): # Iterate over a copy to allow modification
-            batch_id = batch_info['batch_id']
-            file_path = batch_info['file_path']
-            
-            try:
-                batch = client.batches.retrieve(batch_id)
-                current_status = batch.status
-                
-                if current_status != batch_info['status']:
-                    print(f"Batch {batch_id} ({file_path.name}) status changed: {batch_info['status']} -> {current_status}")
-                    batch_info['status'] = current_status # Update status in our local list
-
-                if current_status in {"completed", "failed", "cancelled"}:
-                    print(f"Batch {batch_id} ({file_path.name}) finished with status: {current_status}")
-                    
-                    output_base = BATCH_OUTPUT_DIR / file_path.stem
-                    output_base.mkdir(exist_ok=True) # Ensure output directory exists for this batch
-
-                    if batch.output_file_id:
-                        download_file(batch.output_file_id, output_base / "output.jsonl")
-                    else:
-                        print(f"No output file for batch {batch_id}.")
-                    
-                    if batch.error_file_id:
-                        download_file(batch.error_file_id, output_base / "errors.jsonl")
-                    else:
-                        print(f"No error file for batch {batch_id}.")
-                    
-                    completed_this_cycle.append(batch_info)
-                else:
-                    print(f"Batch {batch_id} ({file_path.name}) status: {current_status} - Waiting...")
-
-            except Exception as e:
-                print(f"❌ Error retrieving status for batch {batch_id} ({file_path.name}): {e}")
-                # Consider marking this batch as problematic and removing it if persistent errors
-                # For now, we'll let it stay in active_batches to retry
-                
-        # Remove completed/failed/cancelled batches from the active list
-        for finished_batch in completed_this_cycle:
-            active_batches.remove(finished_batch)
-            
-        if active_batches: # Only sleep if there are still active batches
-            print(f"Sleeping for {polling_interval_seconds} seconds before next poll...")
-            time.sleep(polling_interval_seconds)
-
-    print("\n✅ All batch jobs processed (completed, failed, or cancelled).")
-
-if __name__ == "__main__":
-    main()
