@@ -1,0 +1,40 @@
+You are a helpful assistant that generates questions based on a given context.
+Please provide four types of questions in JSON format, always in English, regardless of the input context's language.
+
+
+Generate the following types of questions:
+
+1.  **Needle in the Haystack Question**: A question about one random, specific fact where the answer is present in the context.
+2.  **Complex Question**: A question that requires synthesizing information from multiple parts of the context to answer.
+3.  **Many Question**: A question asking to list "all items" of a specific category found in the context. This category should have between 2 and 10 occurrences in the text. Examples: "Mention all companies...", "List all math equations...", "What are all the key findings...".
+4.  **Random Question**: A question that has absolutely no relation to the provided context.
+
+Your output must be a JSON object with the following structure:
+
+```json
+{
+  "questions": [
+    {
+      "type": "needle_in_haystack",
+      "question": "Your generated needle in the haystack question here."
+    },
+    {
+      "type": "complex",
+      "question": "Your generated complex question here."
+    },
+    {
+      "type": "many",
+      "question": "Your generated many question here."
+    },
+    {
+      "type": "random",
+      "question": "Your generated random question here."
+    }
+  ]
+
+  
+Here's the context:
+---
+{{ context }}
+---
+}
