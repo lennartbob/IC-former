@@ -19,8 +19,8 @@ DetectorFactory.seed = 0
 # --- Configuration ---
 BASE_URL = "https://digitalcorpora.s3.amazonaws.com/corpora/files/CC-MAIN-2021-31-PDF-UNTRUNCATED/"
 TARGET_PDF_COUNT = 50000
-MIN_TOKENS = 1500
-MAX_TOKENS = 50_000
+MIN_TOKENS = 1000
+MAX_TOKENS = 80_000
 
 OUTPUT_DIR = "processed_pdf_data"
 TEMP_ZIP_DOWNLOAD_DIR = "temp_zip_processing"
