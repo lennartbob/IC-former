@@ -4,7 +4,7 @@ from uuid import uuid4
 from core.bacher import AzureBatchJsonlGenerator
 from core.jinja_helper import process_template
 
-path = "data/collected_pdf_texts_async.json"
+path = "data/collected_pdf_texts_merged.json"
 
 
 with open(path, encoding="utf-8") as f:
@@ -12,6 +12,9 @@ with open(path, encoding="utf-8") as f:
 
 bachter = AzureBatchJsonlGenerator(output_dirpath="data/question_batches")
 for pdf_item in data:
+    if "questions" in pdf_item:
+        print("skipping! because it already exists")
+        continue
     pdf_id = pdf_item["filename"].split(".")[0]
     prompt = process_template(
         "question_gen.jinja",
