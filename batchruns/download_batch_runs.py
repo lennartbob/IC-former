@@ -49,10 +49,10 @@ if __name__ == "__main__":
     BATCH_OUTPUT_DIR = Path("data/question_batches_output")
 
     ids = [
-        "batch_d0a3e94e-2a0f-486a-83bf-2d3548b97892",
-        "batch_0cf0ebbc-110b-4e8c-a600-b6325bc11404",
-        "batch_a756b163-2c07-4425-9a2d-85bed1057398",
-        "batch_062f6ed7-f7a3-4a7c-ac4d-db1b767bf2d2",
-        "batch_1d9b01d3-91fe-46bd-9916-adcbf884f660",
+        "file-2c083a73-fe51-4ff7-afc4-e8089d8bfbf4",
+        "file-b086b7b6-d6d7-4e62-a7ae-98dee71a3431",
+        "file-46837b6b-6599-4a33-84f1-5a14cf5d120e",
+        "file-512bd224-b010-45ea-9e81-7a9cd003a11b",
+        "file-69434a52-c24a-4588-bddc-bc6d07da657e"
     ]
     asyncio.run(download_batch_run(ids, BATCH_OUTPUT_DIR, client))
