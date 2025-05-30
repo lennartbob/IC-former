@@ -4,10 +4,10 @@ from botocore.exceptions import ClientError
 
 # --- Configuration ---
 #DEFAULT_JSON_FILENAME = "/mnt/data_volume/dataset/downloaded_valid_pdfs/collected_pdf_texts.json"
-DEFAULT_JSON_FILENAME = "data/collected_pdf_texts.json"
+DEFAULT_JSON_FILENAME = "data/collected_pdf_texts_with_q_and_answer_id_updated.json"
 
 AWS_BUCKET_NAME = "digitizepid"
-S3_OBJECT_KEY = "STF_con_sum.jsonl" # The name it will have in the S3 bucket
+S3_OBJECT_KEY = "collected_pdf_texts_with_q_and_answer_id_updated.json" # The name it will have in the S3 bucket
 
 def upload_json_to_s3(json_file_path, bucket_name, object_key):
     """
@@ -111,10 +111,10 @@ def upload_folder_to_s3(local_folder_path, bucket_name, s3_prefix=""):
 
     return upload_success
 
-if __name__ == "__main__":
-    # Call the upload function with your specified folder, bucket, and prefix
-    LOCAL_FOLDER_TO_UPLOAD = ""
-    upload_folder_to_s3(LOCAL_FOLDER_TO_UPLOAD, AWS_BUCKET_NAME, "")
+# if __name__ == "__main__":
+#     # Call the upload function with your specified folder, bucket, and prefix
+#     LOCAL_FOLDER_TO_UPLOAD = ""
+#     upload_folder_to_s3(LOCAL_FOLDER_TO_UPLOAD, AWS_BUCKET_NAME, "")
 
 
 if __name__ == "__main__":

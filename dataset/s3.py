@@ -4,8 +4,8 @@ from botocore.exceptions import ClientError
 
 # --- Configuration ---
 AWS_BUCKET_NAME = "digitizepid"
-S3_OBJECT_KEY = "collected_pdf_texts.json" # The name it will have in the S3 bucket
-DEFAULT_JSON_FILENAME = "collected_pdf_texts.jsonl" # Local filename for upload and download
+S3_OBJECT_KEY = "collected_pdf_texts_with_q_and_answer_id_updated.json" # The name it will have in the S3 bucket
+DEFAULT_JSON_FILENAME = "collected_pdf_texts_with_q_and_answer_id_updated.json" # Local filename for upload and download
 
 def download_json_from_s3(bucket_name, object_key, local_file_path):
     """
