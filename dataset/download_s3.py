@@ -2,7 +2,7 @@ import os
 import requests
 import zipfile
 import io
-import fitz  # PyMuPDF
+import fitz
 import tiktoken
 from tqdm import tqdm
 import random
