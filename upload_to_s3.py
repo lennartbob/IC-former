@@ -111,15 +111,15 @@ def upload_folder_to_s3(local_folder_path, bucket_name, s3_prefix=""):
 
     return upload_success
 
-# if __name__ == "__main__":
-#     # Call the upload function with your specified folder, bucket, and prefix
-#     LOCAL_FOLDER_TO_UPLOAD = ""
-#     upload_folder_to_s3(LOCAL_FOLDER_TO_UPLOAD, AWS_BUCKET_NAME, "")
-
-
 if __name__ == "__main__":
-    # Ensure the JSON file path is correct
-    json_path_to_upload = DEFAULT_JSON_FILENAME
+    # Call the upload function with your specified folder, bucket, and prefix
+    LOCAL_FOLDER_TO_UPLOAD = "data/question_batches"
+    upload_folder_to_s3(LOCAL_FOLDER_TO_UPLOAD, AWS_BUCKET_NAME, "")
 
-    # Call the upload function
-    upload_json_to_s3(json_path_to_upload, AWS_BUCKET_NAME, S3_OBJECT_KEY)
+
+# if __name__ == "__main__":
+#     # Ensure the JSON file path is correct
+#     json_path_to_upload = DEFAULT_JSON_FILENAME
+
+#     # Call the upload function
+#     upload_json_to_s3(json_path_to_upload, AWS_BUCKET_NAME, S3_OBJECT_KEY)
