@@ -1,6 +1,8 @@
 import json
 from pprint import pprint
 
+from tqdm import tqdm
+
 from core.bacher import AzureBatchJsonlGenerator
 from core.jinja_helper import process_template
 
@@ -84,7 +86,7 @@ with open(path, encoding="utf-8") as f:
 bachter = AzureBatchJsonlGenerator(output_dirpath="data/bigger_bachtes")
 
 f = 0
-for pdf_item in main_db:
+for pdf_item in tqdm(main_db):
     text = pdf_item["text"]
     if "questions" not in pdf_item:
         f +=1
@@ -93,6 +95,8 @@ for pdf_item in main_db:
     lang = map_langdetect_to_full_language(pdf_item["language"])
     for que in questions:
         if que["answer"] != "":
+            continue
+        if "q_id" not in que:
             continue
         id = que["q_id"]
         prompt = process_template(
