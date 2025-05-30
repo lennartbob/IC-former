@@ -46,12 +46,10 @@ def download_batch_run(batch_ids: list[str], BATCH_OUTPUT_DIR: str, client):
 
 if __name__ == "__main__":
     BATCH_OUTPUT_DIR = Path("data/question_batches_output")
-
     ids = [
-        "file-2c083a73-fe51-4ff7-afc4-e8089d8bfbf4",
-        "file-b086b7b6-d6d7-4e62-a7ae-98dee71a3431",
-        "file-46837b6b-6599-4a33-84f1-5a14cf5d120e",
-        "file-512bd224-b010-45ea-9e81-7a9cd003a11b",
-        "file-69434a52-c24a-4588-bddc-bc6d07da657e"
+        "file-4eae347c-de4f-45ff-8c44-4c93c8ca9599",
+        "file-93a14d98-28e2-49f0-ad1c-751328da2215",
+        "file-e770e8e2-0f92-4c02-b4c3-8e68012f7c0b",
+        "file-4f9c9886-2434-4a11-a3e1-f273321a0547"
     ]
     download_batch_run(ids, BATCH_OUTPUT_DIR, client)
