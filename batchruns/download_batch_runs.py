@@ -1,11 +1,7 @@
-
-
-import asyncio
 import os
 from pathlib import Path
 
 from openai import AzureOpenAI
-from batchruns.run_folder import download_file
 import aiofiles
 
 API_KEY = os.environ.get("AZURE_OPENAI_API_KEY")
@@ -25,26 +21,29 @@ client = AzureOpenAI(
     api_key=API_KEY,
     api_version=API_VERSION,
 )
-async def download_batch_run(batch_ids: list[str], BATCH_OUTPUT_DIR: str, client):
+
+def download_batch_run(batch_ids: list[str], BATCH_OUTPUT_DIR: str, client):
     os.makedirs(BATCH_OUTPUT_DIR, exist_ok=True)
 
     for id in batch_ids:
         try:
-            # Download file content (assumes this returns an async stream or bytes-like object)
-            response = await client.files.content(id)
+            # Download file content
+            response = client.files.content(id)
 
             # Define the output path
             output_path = os.path.join(BATCH_OUTPUT_DIR, f"{id}.jsonl")
 
-            # Save file asynchronously
-            async with aiofiles.open(output_path, "wb") as f:
-                content = await response.read()
-                await f.write(content)
+            # Save file synchronously
+            # The .read() method on the HttpxBinaryResponseContent object is synchronous
+            with open(output_path, "wb") as f:
+                content = response.read()
+                f.write(content)
 
             print(f"Saved: {output_path}")
 
         except Exception as e:
             print(f"Failed to download file {id}: {e}")
+
 if __name__ == "__main__":
     BATCH_OUTPUT_DIR = Path("data/question_batches_output")
 
@@ -55,4 +54,4 @@ if __name__ == "__main__":
         "file-512bd224-b010-45ea-9e81-7a9cd003a11b",
         "file-69434a52-c24a-4588-bddc-bc6d07da657e"
     ]
-    asyncio.run(download_batch_run(ids, BATCH_OUTPUT_DIR, client))
+    download_batch_run(ids, BATCH_OUTPUT_DIR, client)
