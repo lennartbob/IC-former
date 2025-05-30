@@ -20,7 +20,8 @@ TARGET_PDF_COUNT = 50000  # How many valid PDFs to collect
 MIN_TOKENS = 1500
 MAX_TOKENS = 50_000 # Added max token limit
 
-OUTPUT_DIR = "downloaded_valid_pdfs"
+# OUTPUT_DIR will now only contain the JSON file, not individual PDFs
+OUTPUT_DIR = "processed_pdf_data" # Renamed to reflect its new purpose
 # Temporary directory for storing the currently downloaded ZIP file
 TEMP_ZIP_DOWNLOAD_DIR = "temp_zip_processing"
 JSON_OUTPUT_FILENAME = "collected_pdf_texts.json"
@@ -30,7 +31,7 @@ JSON_OUTPUT_FILENAME = "collected_pdf_texts.json"
 # ZIPs: 0000.zip to 7932.zip (7,933 ZIP files)
 TOTAL_ZIP_FILES = 7933
 
-db_path = os.path.join(OUTPUT_DIR, JSON_OUTPUT_FILENAME) # Corrected db_path to point to output dir
+db_path = os.path.join(OUTPUT_DIR, JSON_OUTPUT_FILENAME)
 
 # --- Setup ---
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -169,13 +170,14 @@ for zip_idx in zip_file_indices:
                     continue
 
                 try:
-                    pdf_bytes = zf.read(pdf_name_in_zip)
+                    pdf_bytes = zf.read(pdf_name_in_zip) # PDF content loaded into RAM here
                 except Exception as e_read:
                     # print(f"Error reading {pdf_name_in_zip} from ZIP: {e_read}")
                     continue # Skip this PDF
 
                 # 3. Extract text and count tokens
                 extracted_text, token_count = extract_text_and_count_tokens_from_pdf_data(pdf_bytes)
+                # pdf_bytes is now eligible for garbage collection
 
                 if extracted_text is None: # fitz processing error
                     continue # Skip this PDF
@@ -185,10 +187,11 @@ for zip_idx in zip_file_indices:
                     # Detect language
                     language = detect_language(extracted_text)
 
-                    # Save the PDF file itself
-                    output_pdf_path = os.path.join(OUTPUT_DIR, pdf_name_in_zip)
-                    with open(output_pdf_path, 'wb') as f_out_pdf:
-                        f_out_pdf.write(pdf_bytes)
+                    # --- IMPORTANT CHANGE: No longer saving the PDF file itself ---
+                    # The following lines are REMOVED:
+                    # output_pdf_path = os.path.join(OUTPUT_DIR, pdf_name_in_zip)
+                    # with open(output_pdf_path, 'wb') as f_out_pdf:
+                    #     f_out_pdf.write(pdf_bytes)
 
                     # Store data for JSON
                     collected_data_for_json.append({
@@ -241,7 +244,7 @@ else:
 
 print(f"\n--- Processing Complete ---")
 print(f"Collected {valid_pdfs_found_count} PDFs meeting the criteria ({MIN_TOKENS}-{MAX_TOKENS} tokens).")
-print(f"PDFs and JSON data saved in: {os.path.abspath(OUTPUT_DIR)}")
+print(f"JSON data saved in: {os.path.abspath(OUTPUT_DIR)}")
 
 if valid_pdfs_found_count < TARGET_PDF_COUNT and not stop_all_processing:
     print(f"Warning: Only found {valid_pdfs_found_count} PDFs after checking all available ZIPs, but targeted {TARGET_PDF_COUNT}.")
