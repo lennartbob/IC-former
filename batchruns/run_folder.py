@@ -116,3 +116,6 @@ def main():
     if not active_batches:
         print("No batch jobs were initiated. Exiting.")
         return
+if __name__ == "__main__":
+
+  main()
