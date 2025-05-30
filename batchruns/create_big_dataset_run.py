@@ -83,8 +83,12 @@ with open(path, encoding="utf-8") as f:
 
 bachter = AzureBatchJsonlGenerator(output_dirpath="data/bigger_bachtes")
 
+f = 0
 for pdf_item in main_db:
     text = pdf_item["text"]
+    if "questions" not in pdf_item:
+        f +=1
+        continue
     questions = pdf_item["questions"]
     lang = map_langdetect_to_full_language(pdf_item["language"])
     for que in questions:
@@ -101,6 +105,7 @@ for pdf_item in main_db:
             custom_id=id
         )
 
+print("PDF items with no questions:",f)
 bachter.close_file()
 
 
