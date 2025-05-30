@@ -9,8 +9,9 @@ import random
 import time
 import shutil
 import json
-from langdetect import detect, DetectorFactory, LangDetectException # Import LangDetectException
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from langdetect import detect, DetectorFactory
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # Ensure reproducibility for langdetect if needed
 DetectorFactory.seed = 0
@@ -21,7 +22,7 @@ TARGET_PDF_COUNT = 50000
 MIN_TOKENS = 1500
 MAX_TOKENS = 50_000
 
-OUTPUT_DIR = "processed_pdf_data" # Renamed to reflect its new purpose (only JSON)
+OUTPUT_DIR = "processed_pdf_data"
 TEMP_ZIP_DOWNLOAD_DIR = "temp_zip_processing"
 JSON_OUTPUT_FILENAME = "collected_pdf_texts.json"
 
@@ -29,22 +30,29 @@ TOTAL_ZIP_FILES = 7933
 
 db_path = os.path.join(OUTPUT_DIR, JSON_OUTPUT_FILENAME)
 
+# Concurrency settings
+MAX_CONCURRENT_DOWNLOADS = 50 # Max simultaneous ZIP downloads
+MAX_CONCURRENT_PROCESSORS = os.cpu_count() * 2 or 8 # Max simultaneous ZIP processing (can be higher than CPU count due to I/O)
+
 # --- Setup ---
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(TEMP_ZIP_DOWNLOAD_DIR, exist_ok=True)
 
-# Initialize tiktoken tokenizer globally in main process.
-# Each child process will get its own copy if multiprocessing is used, which is fine as it's cached.
+# Initialize tiktoken tokenizer
 try:
-    # This global tokenizer is mainly for the main process; workers will initialize their own.
-    global_tokenizer = tiktoken.get_encoding("cl100k_base")
+    tokenizer = tiktoken.get_encoding("cl100k_base")
 except Exception:
     print("Falling back to p50k_base tokenizer for tiktoken.")
-    global_tokenizer = tiktoken.get_encoding("p50k_base")
+    tokenizer = tiktoken.get_encoding("p50k_base")
 
-# Load existing data and populate already_found_pdf_names set
+# Global shared data and lock
+# The lock protects access to collected_data_for_json, already_found_pdf_names, and valid_pdfs_found_count
+data_lock = threading.Lock()
 collected_data_for_json = []
 already_found_pdf_names = set()
+valid_pdfs_found_count = 0
+
+# Load existing data and populate already_found_pdf_names set
 if os.path.exists(db_path):
     try:
         with open(db_path, 'r', encoding='utf-8') as f:
@@ -53,13 +61,11 @@ if os.path.exists(db_path):
             for item in existing_data:
                 already_found_pdf_names.add(item["filename"])
         print(f"Loaded {len(existing_data)} existing PDF entries from {db_path}.")
+        valid_pdfs_found_count = len(already_found_pdf_names)
     except (json.JSONDecodeError, FileNotFoundError) as e:
         print(f"Could not load existing JSON database {db_path}: {e}. Starting fresh.")
 else:
     print(f"No existing JSON database found at {db_path}. Starting fresh.")
-
-initial_valid_pdfs_count = len(already_found_pdf_names)
-valid_pdfs_found_count = initial_valid_pdfs_count
 
 def get_zip_url_and_local_path(zip_num_int):
     """
@@ -73,230 +79,247 @@ def get_zip_url_and_local_path(zip_num_int):
     local_download_path = os.path.join(TEMP_ZIP_DOWNLOAD_DIR, zip_filename_short)
     return full_zip_url, local_download_path
 
-def extract_text_and_count_tokens_from_pdf_data_worker(pdf_data):
+def download_zip(zip_idx):
     """
-    Worker function for PDF text extraction and token counting.
-    Runs in a separate process.
+    Downloads a single ZIP file.
+    Returns local_zip_filepath on success, None on failure.
+    """
+    zip_url, local_zip_filepath = get_zip_url_and_local_path(zip_idx)
+    try:
+        # print(f"Downloading {zip_idx:04d}.zip...")
+        response = requests.get(zip_url, stream=True, timeout=30) # Added timeout
+        response.raise_for_status()
+
+        with open(local_zip_filepath, 'wb') as f_zip:
+            for chunk in response.iter_content(chunk_size=8192*4): # Increased chunk size for faster download
+                f_zip.write(chunk)
+        return local_zip_filepath
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading {zip_url}: {e}")
+        if os.path.exists(local_zip_filepath): # Clean up partial download
+            os.remove(local_zip_filepath)
+        return None
+    except Exception as e:
+        print(f"Unexpected error during download of {zip_url}: {e}")
+        if os.path.exists(local_zip_filepath):
+            os.remove(local_zip_filepath)
+        return None
+
+def extract_text_and_count_tokens_from_pdf_data(pdf_data):
+    """
+    Extracts text from PDF byte data, counts tokens, and returns text and count.
+    Returns (None, 0) on error during PDF processing.
     """
     full_text = ""
     try:
-        # Open PDF from bytes
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
             full_text += page.get_text()
         doc.close()
-    except Exception: # Catch all exceptions during PDF processing (e.g., malformed PDF)
-        return None, 0 # Indicate error
-
+    except Exception as e:
+        # print(f"Fitz error processing a PDF: {e}") # Optional: for debugging
+        return None, 0
     if not full_text.strip():
-        return "", 0 # No text extracted
-
-    # Each process needs its own tokenizer for correctness, but tiktoken caches efficiently
-    try:
-        tokenizer = tiktoken.get_encoding("cl100k_base")
-    except Exception:
-        tokenizer = tiktoken.get_encoding("p50k_base")
-
+        return "", 0
     tokens = tokenizer.encode(full_text)
     return full_text, len(tokens)
 
-def detect_language_worker(text):
+def detect_language(text):
     """
-    Worker function for language detection.
-    Runs in a separate process.
+    Detects the language of the given text.
+    Returns language code (e.g., 'en', 'es') or 'unknown' if detection fails.
     """
     try:
-        if len(text) > 50: # Only try to detect if enough text is present
+        if len(text) > 50:
             return detect(text)
         else:
             return "too_short_for_detection"
-    except LangDetectException: # Specific exception for langdetect when it cannot detect
-        return "unknown"
-    except Exception: # Catch other potential errors during detection
+    except Exception as e:
         return "unknown"
 
-def process_single_pdf_task(pdf_name_in_zip, pdf_bytes):
+def process_zip_file(local_zip_filepath):
     """
-    A single task for ProcessPoolExecutor: extract text, count tokens, detect language.
-    Returns a dictionary of results or None if the PDF doesn't meet criteria or has an error.
+    Processes a downloaded ZIP file, extracts PDFs, and collects valid data.
     """
-    extracted_text, token_count = extract_text_and_count_tokens_from_pdf_data_worker(pdf_bytes)
+    global valid_pdfs_found_count, collected_data_for_json, already_found_pdf_names # Declare globals
+    zip_idx = int(os.path.basename(local_zip_filepath).split('.')[0]) # Extract zip_idx from filename
+    try:
+        # print(f"Processing PDFs in {os.path.basename(local_zip_filepath)}...")
+        with zipfile.ZipFile(local_zip_filepath, 'r') as zf:
+            pdf_filenames_in_zip = [
+                member.filename for member in zf.infolist()
+                if not member.is_dir() and member.filename.lower().endswith('.pdf')
+            ]
 
-    if extracted_text is None: # fitz processing error
-        return None
+            pdfs_processed_in_zip = 0
+            for pdf_name_in_zip in pdf_filenames_in_zip:
+                # Check if target count is met globally before processing this PDF
+                with data_lock:
+                    if valid_pdfs_found_count >= TARGET_PDF_COUNT:
+                        # Signal to stop processing this zip early if target hit
+                        return "TARGET_REACHED"
 
-    if MIN_TOKENS <= token_count <= MAX_TOKENS:
-        language = detect_language_worker(extracted_text)
-        return {
-            "filename": pdf_name_in_zip,
-            "text": extracted_text,
-            "token_count": token_count,
-            "language": language
-        }
-    return None
-
-def download_and_extract_zip_task(zip_idx):
-    """
-    A single task for ThreadPoolExecutor: download a ZIP and extract its PDF bytes.
-    Returns a list of (filename, pdf_bytes) tuples for all PDFs in the ZIP.
-    Handles network errors and retries.
-    """
-    zip_url, local_zip_filepath = get_zip_url_and_local_path(zip_idx)
-    max_retries = 3
-    retries = 0
-    
-    while retries < max_retries:
-        try:
-            # Increased timeout to handle large ZIPs or slow connections, adjusted chunk size
-            response = requests.get(zip_url, stream=True, timeout=60) 
-            response.raise_for_status()
-
-            # Store to disk temporarily for robust handling with zipfile, larger chunk size
-            with open(local_zip_filepath, 'wb') as f_zip:
-                for chunk in response.iter_content(chunk_size=8192 * 8): 
-                    f_zip.write(chunk)
-
-            pdf_data_list = []
-            with zipfile.ZipFile(local_zip_filepath, 'r') as zf:
-                for member in zf.infolist():
-                    if not member.is_dir() and member.filename.lower().endswith('.pdf'):
-                        try:
-                            pdf_bytes = zf.read(member.filename)
-                            pdf_data_list.append((member.filename, pdf_bytes))
-                        except Exception: # Catch errors reading individual PDFs from ZIP
-                            pass # Skip problematic PDFs within a ZIP
-
-            return pdf_data_list # Return the list of (filename, bytes) tuples
-
-        except requests.exceptions.RequestException as e_req:
-            retries += 1
-            # print(f"Download/Network error for {zip_url}: {e_req}. Retrying ({retries}/{max_retries})...")
-            time.sleep(2 * retries) # Exponential backoff for retries
-        except zipfile.BadZipFile:
-            # print(f"Corrupt ZIP file downloaded: {local_zip_filepath}. Skipping after {retries+1} retries.")
-            return [] # Return empty list if ZIP is bad
-        finally:
-            if os.path.exists(local_zip_filepath):
-                try:
-                    os.remove(local_zip_filepath) # Clean up temporary ZIP immediately
-                except OSError:
-                    pass # Ignore if file cannot be deleted (e.g., already gone)
-    
-    # print(f"Failed to download and process {zip_url} after {max_retries} retries. Skipping.")
-    return [] # Failed to download after all retries
-
-# --- Main Download and Processing Logic ---
-zip_file_indices = list(range(TOTAL_ZIP_FILES))
-# random.shuffle(zip_file_indices) # Uncomment to process ZIPs in random order for more diverse sample
-
-# Progress bar for overall valid PDFs found
-pbar_valid_pdfs = tqdm(initial=initial_valid_pdfs_count, total=TARGET_PDF_COUNT, desc="Valid PDFs Found", unit="PDF")
-# Progress bar for ZIPs processed (tracks ZIPs whose download/extraction is finished)
-pbar_zips = tqdm(total=len(zip_file_indices), desc="Processing ZIPs", unit="ZIP")
-
-
-# Adjust these values based on your server's resources and network
-NUM_DOWNLOAD_WORKERS = min(16, TOTAL_ZIP_FILES) # Threads for I/O bound tasks
-NUM_PROCESS_WORKERS = os.cpu_count() or 8 # Processes for CPU bound tasks
-
-print(f"Using {NUM_DOWNLOAD_WORKERS} download workers (threads).")
-print(f"Using {NUM_PROCESS_WORKERS} PDF processing workers (processes).")
-
-stop_all_processing = False
-pdf_processing_futures = []
-
-with ThreadPoolExecutor(max_workers=NUM_DOWNLOAD_WORKERS) as download_executor, \
-     ProcessPoolExecutor(max_workers=NUM_PROCESS_WORKERS) as process_executor:
-
-    # Submit all download tasks
-    download_futures = {download_executor.submit(download_and_extract_zip_task, zip_idx): zip_idx for zip_idx in zip_file_indices}
-
-    for download_future in as_completed(download_futures):
-        if stop_all_processing:
-            break # Exit the loop if target count reached
-
-        zip_idx = download_futures[download_future]
-        pbar_zips.update(1) # Mark this ZIP's download/extraction as completed
-
-        try:
-            # Get the list of (filename, pdf_bytes) for PDFs from the downloaded ZIP
-            pdf_data_list_from_zip = download_future.result() 
-            
-            for pdf_name_in_zip, pdf_bytes in pdf_data_list_from_zip:
-                if valid_pdfs_found_count >= TARGET_PDF_COUNT:
-                    stop_all_processing = True
-                    break # Stop submitting new processing tasks
-
-                # Filter out already found PDFs before submitting to processing pool
                 if pdf_name_in_zip in already_found_pdf_names:
                     continue
 
-                # Submit PDF processing to the ProcessPoolExecutor
-                # pdf_bytes is copied/pickled to the new process
-                future = process_executor.submit(process_single_pdf_task, pdf_name_in_zip, pdf_bytes)
-                pdf_processing_futures.append(future)
+                try:
+                    pdf_bytes = zf.read(pdf_name_in_zip)
+                except Exception as e_read:
+                    # print(f"Error reading {pdf_name_in_zip} from ZIP {zip_idx}: {e_read}")
+                    continue
 
-        except Exception as exc:
-            # print(f'ZIP {zip_idx} generated an exception during download or extraction: {exc}')
-            pass # Silently pass on ZIP errors, as the task function already handles retries/logging
+                extracted_text, token_count = extract_text_and_count_tokens_from_pdf_data(pdf_bytes)
 
-        # Periodically check and collect results from PDF processing futures
-        # This prevents the pdf_processing_futures list from growing indefinitely large
-        # and allows the main thread to update progress and the collected_data_for_json
-        # list incrementally.
-        completed_processing_futures = [f for f in pdf_processing_futures if f.done()]
-        for completed_future in completed_processing_futures:
-            pdf_processing_futures.remove(completed_future)
+                if extracted_text is None:
+                    continue
+
+                if MIN_TOKENS <= token_count <= MAX_TOKENS:
+                    language = detect_language(extracted_text)
+
+                    with data_lock: # Protect shared data writes
+                        if valid_pdfs_found_count < TARGET_PDF_COUNT: # Double-check under lock
+                            collected_data_for_json.append({
+                                "filename": pdf_name_in_zip,
+                                "text": extracted_text,
+                                "token_count": token_count,
+                                "language": language
+                            })
+                            already_found_pdf_names.add(pdf_name_in_zip)
+                            valid_pdfs_found_count += 1
+                            pdfs_processed_in_zip += 1
+                            pbar_valid_pdfs.update(1)
+                            # print(f"VALID: {pdf_name_in_zip}, Tokens: {token_count}, Lang: {language}. ({valid_pdfs_found_count}/{TARGET_PDF_COUNT})")
+                            # If target reached, signal it
+                            if valid_pdfs_found_count >= TARGET_PDF_COUNT:
+                                return "TARGET_REACHED"
+        return "SUCCESS" # Indicate successful processing of this ZIP
+    except Exception as e:
+        print(f"Error processing ZIP {zip_idx}: {e}")
+        return "FAILURE"
+    finally:
+        # Always delete the temporary ZIP file
+        if os.path.exists(local_zip_filepath):
             try:
-                result = completed_future.result()
-                if result and result["filename"] not in already_found_pdf_names:
-                    collected_data_for_json.append(result)
-                    already_found_pdf_names.add(result["filename"])
-                    valid_pdfs_found_count += 1
-                    pbar_valid_pdfs.update(1)
-            except Exception:
-                # print(f"A PDF processing task generated an exception: {exc}")
-                pass # Silently ignore errors from individual PDF processing tasks
+                os.remove(local_zip_filepath)
+                # print(f"Deleted temporary ZIP: {local_zip_filepath}")
+            except OSError as e_del:
+                print(f"Error deleting temporary ZIP {local_zip_filepath}: {e_del}")
+        pbar_zips.update(1)
 
+
+# --- Main Download and Processing Logic ---
+zip_file_indices = list(range(TOTAL_ZIP_FILES))
+# random.shuffle(zip_file_indices) # Uncomment to process ZIPs in random order
+
+pbar_valid_pdfs = tqdm(initial=valid_pdfs_found_count, total=TARGET_PDF_COUNT, desc="Valid PDFs Found", unit="PDF")
+pbar_zips = tqdm(total=len(zip_file_indices), desc="Processing ZIPs", unit="ZIP")
+
+stop_processing_flag = False
+
+# Use ThreadPoolExecutors for concurrent operations
+with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS, thread_name_prefix="Download") as download_executor, \
+     ThreadPoolExecutor(max_workers=MAX_CONCURRENT_PROCESSORS, thread_name_prefix="Process") as process_executor:
+
+    download_futures = set()
+    process_futures = set()
+
+    # Initial seeding of download tasks
+    for i in range(min(MAX_CONCURRENT_DOWNLOADS, len(zip_file_indices))):
         if valid_pdfs_found_count >= TARGET_PDF_COUNT:
-            stop_all_processing = True
-            print(f"\nTarget PDF count ({TARGET_PDF_COUNT}) reached. Shutting down executors and stopping new tasks.")
-            break # Exit the main download loop if target reached
+            stop_processing_flag = True
+            break
+        zip_idx = zip_file_indices.pop(0) # Take next available zip
+        future = download_executor.submit(download_zip, zip_idx)
+        download_futures.add(future)
+        pbar_zips.set_postfix_str(f"Downloads in flight: {len(download_futures)}")
 
-    # If the target is met, cancel any remaining pending tasks in both executors
-    if stop_all_processing:
-        for future in download_futures:
-            future.cancel()
-        for future in pdf_processing_futures: # Also cancel any remaining processing futures
-            future.cancel()
+    while download_futures or process_futures:
+        # Check if target is met
+        with data_lock:
+            if valid_pdfs_found_count >= TARGET_PDF_COUNT:
+                stop_processing_flag = True
+                break
 
-# After all downloads are submitted/finished/cancelled,
-# wait for any *remaining* PDF processing futures that were already submitted
-# to complete and collect their results.
-print("\nCollecting results from remaining PDF processing tasks...")
-for future in as_completed(pdf_processing_futures):
-    if valid_pdfs_found_count >= TARGET_PDF_COUNT:
-        break # Stop if target reached during final collection
-    try:
-        result = future.result()
-        if result and result["filename"] not in already_found_pdf_names:
-            collected_data_for_json.append(result)
-            already_found_pdf_names.add(result["filename"])
-            valid_pdfs_found_count += 1
-            pbar_valid_pdfs.update(1)
-    except Exception:
-        pass # Silently ignore errors from individual PDF processing tasks
+        # Process completed download tasks
+        for future in as_completed(download_futures, timeout=1): # Use a timeout to regularly check other futures
+            download_futures.discard(future)
+            local_zip_filepath = future.result()
+            if local_zip_filepath:
+                process_future = process_executor.submit(process_zip_file, local_zip_filepath)
+                process_futures.add(process_future)
+            pbar_zips.set_postfix_str(f"Downloads in flight: {len(download_futures)}")
 
+            # If there are more ZIPs to download and we're under the limit, submit another download
+            if not stop_processing_flag and zip_file_indices and len(download_futures) < MAX_CONCURRENT_DOWNLOADS:
+                zip_idx = zip_file_indices.pop(0)
+                new_future = download_executor.submit(download_zip, zip_idx)
+                download_futures.add(new_future)
+                pbar_zips.set_postfix_str(f"Downloads in flight: {len(download_futures)}")
+
+        # Process completed processing tasks
+        for future in as_completed(process_futures, timeout=1):
+            process_futures.discard(future)
+            result = future.result()
+            if result == "TARGET_REACHED":
+                stop_processing_flag = True
+                break # Break from this loop to check outer condition
+
+        if stop_processing_flag:
+            break
+
+        # If no futures are immediately ready, wait a bit
+        if not download_futures and not process_futures and zip_file_indices:
+             # This means we might have exhausted initial downloads, but more are available.
+             # This block ensures we submit new downloads if processing has caught up.
+             # (Though the logic above for adding new downloads should handle most cases)
+             if len(download_futures) < MAX_CONCURRENT_DOWNLOADS:
+                if zip_file_indices:
+                    zip_idx = zip_file_indices.pop(0)
+                    future = download_executor.submit(download_zip, zip_idx)
+                    download_futures.add(future)
+                    pbar_zips.set_postfix_str(f"Downloads in flight: {len(download_futures)}")
+                else:
+                    break # No more zips to download
+             else:
+                 time.sleep(0.1) # Prevent busy-waiting if nothing is ready
+        elif not download_futures and not process_futures:
+             # All tasks finished or no more to start
+             break
+        elif len(download_futures) == 0 and len(zip_file_indices) > 0 and len(process_futures) == 0:
+            # If all downloads finished, but there are still zips in queue and processing is done, kick off more downloads
+            for i in range(min(MAX_CONCURRENT_DOWNLOADS, len(zip_file_indices))):
+                if valid_pdfs_found_count >= TARGET_PDF_COUNT:
+                    stop_processing_flag = True
+                    break
+                zip_idx = zip_file_indices.pop(0)
+                future = download_executor.submit(download_zip, zip_idx)
+                download_futures.add(future)
+            if stop_processing_flag:
+                break
+
+
+# Ensure all remaining tasks complete if target wasn't hit or during graceful shutdown
+# This part might still run even if stop_processing_flag is set, but it will quickly drain.
+for future in as_completed(download_futures):
+    local_zip_filepath = future.result()
+    if local_zip_filepath:
+        process_future = process_executor.submit(process_zip_file, local_zip_filepath)
+        process_futures.add(process_future)
+
+for future in as_completed(process_futures):
+    future.result() # Just to ensure exceptions are raised if any happened
 
 pbar_valid_pdfs.close()
 pbar_zips.close()
+
 
 # --- Save the collected data to JSON ---
 if collected_data_for_json:
     print(f"\nSaving collected text data for {len(collected_data_for_json)} PDFs to {db_path}...")
     try:
         # Sort by filename before saving for consistent output
+        # Ensure we're sorting the final list after all processing is done
         collected_data_for_json.sort(key=lambda x: x['filename'])
         with open(db_path, 'w', encoding='utf-8') as f_json:
             json.dump(collected_data_for_json, f_json, ensure_ascii=False, indent=2)
@@ -311,14 +334,18 @@ print(f"\n--- Processing Complete ---")
 print(f"Collected {valid_pdfs_found_count} PDFs meeting the criteria ({MIN_TOKENS}-{MAX_TOKENS} tokens).")
 print(f"JSON data saved in: {os.path.abspath(OUTPUT_DIR)}")
 
-if valid_pdfs_found_count < TARGET_PDF_COUNT:
-    print(f"Warning: Only found {valid_pdfs_found_count} PDFs. Targeted {TARGET_PDF_COUNT}.")
+if valid_pdfs_found_count < TARGET_PDF_COUNT and not stop_processing_flag:
+    print(f"Warning: Only found {valid_pdfs_found_count} PDFs after checking all available ZIPs, but targeted {TARGET_PDF_COUNT}.")
+elif valid_pdfs_found_count < TARGET_PDF_COUNT and stop_processing_flag:
+    print(f"Processing stopped after finding {valid_pdfs_found_count} PDFs (target was {TARGET_PDF_COUNT}).")
 
 
 # --- Cleanup temporary ZIP download directory ---
 try:
-    if os.path.exists(TEMP_ZIP_DOWNLOAD_DIR):
+    if os.path.exists(TEMP_ZIP_DOWNLOAD_DIR) and not os.listdir(TEMP_ZIP_DOWNLOAD_DIR):
         shutil.rmtree(TEMP_ZIP_DOWNLOAD_DIR)
-        print(f"Removed temporary ZIP directory: {TEMP_ZIP_DOWNLOAD_DIR}")
+        print(f"Removed empty temporary ZIP directory: {TEMP_ZIP_DOWNLOAD_DIR}")
+    elif os.path.exists(TEMP_ZIP_DOWNLOAD_DIR):
+        print(f"Temporary ZIP directory {TEMP_ZIP_DOWNLOAD_DIR} is not empty. Manual check may be needed.")
 except Exception as e_cleanup:
     print(f"Error during final cleanup of {TEMP_ZIP_DOWNLOAD_DIR}: {e_cleanup}")
