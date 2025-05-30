@@ -22,7 +22,7 @@ TARGET_PDF_COUNT = 50000
 MIN_TOKENS = 1000
 MAX_TOKENS = 80_000
 
-OUTPUT_DIR = "processed_pdf_data"
+OUTPUT_DIR = "data"
 # --- CHANGE THIS LINE ---
 TEMP_ZIP_DOWNLOAD_DIR = "/dev/shm/temp_zip_processing" # Changed to use /dev/shm
 # --- END CHANGE ---
