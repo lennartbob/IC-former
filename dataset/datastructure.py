@@ -21,6 +21,6 @@ class Source:
     name:str
     size:int #bytes
     topics:list[Topic]
-    type: Type
+    type:Type
     lang:str #short 2 letter appreviation of the language
     id:str = field(uuid4().hex)

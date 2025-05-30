@@ -3,7 +3,9 @@ import boto3
 from botocore.exceptions import ClientError
 
 # --- Configuration ---
-DEFAULT_JSON_FILENAME = "/mnt/data_volume/dataset/downloaded_valid_pdfs/collected_pdf_texts.json"
+#DEFAULT_JSON_FILENAME = "/mnt/data_volume/dataset/downloaded_valid_pdfs/collected_pdf_texts.json"
+DEFAULT_JSON_FILENAME = "data/collected_pdf_texts.json"
+
 AWS_BUCKET_NAME = "digitizepid"
 S3_OBJECT_KEY = "STF_con_sum.jsonl" # The name it will have in the S3 bucket
 
