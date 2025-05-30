@@ -54,4 +54,4 @@ if __name__ == "__main__":
         "batch_062f6ed7-f7a3-4a7c-ac4d-db1b767bf2d2",
         "batch_1d9b01d3-91fe-46bd-9916-adcbf884f660",
     ]
-    download_batch_run(ids = ids)
+    download_batch_run(ids, BATCH_OUTPUT_DIR, client)
