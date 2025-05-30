@@ -2,7 +2,7 @@ import os
 import requests
 import zipfile
 import io
-import fitz  # PyMuPDF
+import fitz  # PyMuPDF
 import tiktoken
 from tqdm import tqdm
 import random
@@ -23,7 +23,10 @@ MIN_TOKENS = 1000
 MAX_TOKENS = 80_000
 
 OUTPUT_DIR = "processed_pdf_data"
-TEMP_ZIP_DOWNLOAD_DIR = "temp_zip_processing"
+# --- CHANGE THIS LINE ---
+TEMP_ZIP_DOWNLOAD_DIR = "/dev/shm/temp_zip_processing" # Changed to use /dev/shm
+# --- END CHANGE ---
+
 JSON_OUTPUT_FILENAME = "collected_pdf_texts.json"
 
 TOTAL_ZIP_FILES = 7933
@@ -36,7 +39,9 @@ MAX_CONCURRENT_PROCESSORS = os.cpu_count() * 2 or 8 # Max simultaneous ZIP proce
 
 # --- Setup ---
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+# Ensure the /dev/shm directory for temporary zips is created
 os.makedirs(TEMP_ZIP_DOWNLOAD_DIR, exist_ok=True)
+
 
 # Initialize tiktoken tokenizer
 try:
@@ -282,7 +287,7 @@ with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS, thread_name_prefix
                 else:
                     break # No more zips to download
              else:
-                 time.sleep(0.1) # Prevent busy-waiting if nothing is ready
+                time.sleep(0.1) # Prevent busy-waiting if nothing is ready
         elif not download_futures and not process_futures:
              # All tasks finished or no more to start
              break
